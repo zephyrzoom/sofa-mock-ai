@@ -288,7 +288,11 @@ const CasesPage = {
         async handleFileUpload(uploadFile) {
             try {
                 const result = await api.uploadCases(uploadFile.raw);
-                this.$message.success('上传成功: ' + (result.imported || 0) + ' 条案例');
+                if (result && result.error) {
+                    this.$message.error('上传失败: ' + result.error);
+                } else {
+                    this.$message.success('上传成功: ' + (result.imported || 0) + ' 条案例');
+                }
                 this.loadCases();
             } catch (e) {
                 this.$message.error('上传失败: ' + e.message);
