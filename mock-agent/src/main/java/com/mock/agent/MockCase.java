@@ -6,6 +6,8 @@ import java.util.Map;
 public class MockCase {
 
     private String id;
+    /** Which file/source this case was loaded from, used to reload per-source without clobbering others. */
+    private String source;
     private String method;
     private String path;
     private String pathPattern;
@@ -31,6 +33,9 @@ public class MockCase {
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
+
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
 
     public String getMethod() { return method; }
     public void setMethod(String method) { this.method = method; }

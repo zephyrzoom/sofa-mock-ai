@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -81,6 +82,36 @@ class MockCaseControllerTest {
                         .content(json))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(200));
+    }
+
+    @Test
+    void testToggleEnabledPartialUpdate() throws Exception {
+        MockCaseEntity entity = new MockCaseEntity();
+        entity.setAppName("test-app");
+        entity.setMethod("GET");
+        entity.setPath("/api/toggle");
+        entity.setStatus(200);
+        entity.setBody("{\"ok\":true}");
+        entity.setEnabled(true);
+        entity = repository.save(entity);
+
+        // The management console only sends { enabled: ... } when flipping the switch.
+        // This must not wipe the NOT NULL columns of the existing row.
+        mockMvc.perform(put("/api/cases/" + entity.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\": false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(jsonPath("$.appName").value("test-app"))
+                .andExpect(jsonPath("$.method").value("GET"))
+                .andExpect(jsonPath("$.path").value("/api/toggle"))
+                .andExpect(jsonPath("$.body").value("{\"ok\":true}"));
+
+        MockCaseEntity reloaded = repository.findById(entity.getId()).orElseThrow(IllegalStateException::new);
+        assertEquals(false, reloaded.isEnabled());
+        assertEquals("test-app", reloaded.getAppName());
+        assertEquals("/api/toggle", reloaded.getPath());
+        assertEquals("{\"ok\":true}", reloaded.getBody());
     }
 
     @Test

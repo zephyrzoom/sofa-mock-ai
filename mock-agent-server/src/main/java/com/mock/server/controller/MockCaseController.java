@@ -6,10 +6,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +25,9 @@ public class MockCaseController {
 
     @Autowired
     private MockCaseService service;
+
+    @Autowired
+    private ObjectMapper mapper;
 
     @GetMapping
     public List<MockCaseEntity> list(@RequestParam(required = false) String appName) {
@@ -49,12 +55,20 @@ public class MockCaseController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<MockCaseEntity> update(@PathVariable Long id, @RequestBody MockCaseEntity entity) {
-        if (!service.existsById(id)) {
+    public ResponseEntity<MockCaseEntity> update(@PathVariable Long id, @RequestBody String rawBody) {
+        MockCaseEntity existing = service.findById(id).orElse(null);
+        if (existing == null) {
             return ResponseEntity.notFound().build();
         }
-        entity.setId(id);
-        return ResponseEntity.ok(service.save(entity));
+        try {
+            // Partial update: only the fields present in the request body are applied,
+            // so toggling `enabled` alone does not null out the NOT NULL columns
+            // (appName/method/path/body) that a full save()/merge would wipe.
+            mapper.readerForUpdating(existing).readValue(rawBody);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid case payload", e);
+        }
+        return ResponseEntity.ok(service.save(existing));
     }
 
     @DeleteMapping("/{id}")

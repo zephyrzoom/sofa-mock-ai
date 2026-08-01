@@ -36,13 +36,19 @@ public class MockCaseManager {
 
             String k = key(lc.getMethod(), lc.getPath());
 
+            // Remove only the cases this file contributed on the previous load.
+            // Do NOT clear the whole key: the same method+path may also have cases
+            // from other sources (e.g. local file + admin-uploaded remote case).
             Set<String> oldKeys = fileKeys.remove(fileName);
             if (oldKeys != null) {
                 for (String oldKey : oldKeys) {
-                    List<MockCase> cases = caseStore.findByKey(
-                            oldKey.split(":")[0], oldKey.split(":")[1]);
+                    String[] parts = oldKey.split(":", 2);
+                    List<MockCase> cases = caseStore.findByKey(parts[0], parts[1]);
                     if (cases != null) {
-                        cases.clear();
+                        cases.removeIf(mc -> fileName.equals(mc.getSource()));
+                        if (cases.isEmpty()) {
+                            caseStore.remove(parts[0], parts[1]);
+                        }
                     }
                 }
             }
@@ -66,6 +72,7 @@ public class MockCaseManager {
             mc.setDescription(lc.getDescription());
             mc.setEnabled(lc.isEnabled());
             mc.setPriority(lc.getPriority());
+            mc.setSource(fileName);
 
             List<MockCase> cases = caseStore.findByKey(lc.getMethod(), lc.getPath());
             if (cases == null) {
@@ -87,8 +94,14 @@ public class MockCaseManager {
                 Set<String> removedKeys = fileKeys.remove(fileName);
                 if (removedKeys != null) {
                     for (String k : removedKeys) {
-                        String[] parts = k.split(":");
-                        caseStore.remove(parts[0], parts[1]);
+                        String[] parts = k.split(":", 2);
+                        List<MockCase> cases = caseStore.findByKey(parts[0], parts[1]);
+                        if (cases != null) {
+                            cases.removeIf(mc -> fileName.equals(mc.getSource()));
+                            if (cases.isEmpty()) {
+                                caseStore.remove(parts[0], parts[1]);
+                            }
+                        }
                     }
                 }
                 fileTimestamps.remove(fileName);
