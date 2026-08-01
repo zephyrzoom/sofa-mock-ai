@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import javax.servlet.http.HttpServletRequest;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,18 +39,21 @@ public class AgentController {
     }
 
     @PostMapping("/register")
-    public AgentInstance register(@RequestBody Map<String, Object> request) {
+    public AgentInstance register(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
         String instanceId = (String) request.get("instanceId");
         String appName = (String) request.get("appName");
-        String ip = (String) request.get("ip");
         int port = request.get("port") != null ? ((Number) request.get("port")).intValue() : 0;
+        // 用注册请求的源 IP 作为 agent 可达地址：agent 能连到本服务，源 IP 必然可达，
+        // 避免 agent 自报的 127.0.0.1 / 虚拟网卡地址导致管理端无法回连（监控/统计 502）。
+        String ip = httpRequest.getRemoteAddr();
         return service.register(instanceId, appName, ip, port);
     }
 
     @PostMapping("/heartbeat")
-    public Map<String, String> heartbeat(@RequestBody Map<String, String> request) {
+    public Map<String, String> heartbeat(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         String instanceId = request.get("instanceId");
-        service.heartbeat(instanceId);
+        // 心跳时用源 IP 刷新地址，应对 DHCP 等地址变化
+        service.heartbeat(instanceId, httpRequest.getRemoteAddr());
         return java.util.Collections.singletonMap("status", "ok");
     }
 

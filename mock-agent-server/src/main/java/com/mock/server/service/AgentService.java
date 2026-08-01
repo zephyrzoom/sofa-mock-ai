@@ -37,9 +37,12 @@ public class AgentService {
         return repository.save(agent);
     }
 
-    public void heartbeat(String instanceId) {
+    public void heartbeat(String instanceId, String ip) {
         repository.findByInstanceId(instanceId).ifPresent(agent -> {
             agent.setLastHeartbeat(LocalDateTime.now());
+            if (ip != null && !ip.isEmpty()) {
+                agent.setIp(ip);
+            }
             agent.setOnline(true);
             repository.save(agent);
         });

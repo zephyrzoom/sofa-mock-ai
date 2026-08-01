@@ -15,6 +15,16 @@ public class RemoteCaseController {
     @Autowired
     private MockCaseService service;
 
+    /** 应用名列表（供控制台仪表盘统计应用数）。 */
+    @GetMapping
+    public List<String> listApps() {
+        return service.findAll().stream()
+                .map(MockCaseEntity::getAppName)
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
     @GetMapping("/{appName}/cases")
     public List<MockCaseEntity> getCasesForApp(@PathVariable String appName) {
         return service.findEnabledByAppName(appName);
