@@ -61,13 +61,5 @@ const api = {
     // Apps
     getApps() {
         return this.request('GET', '/apps');
-    },
-
-    // Stats (from agent management API)
-    getAgentStats(agentUrl) {
-        return fetch(agentUrl + '/mock/stats').then(r => r.json());
-    },
-    getAgentStatus(agentUrl) {
-        return fetch(agentUrl + '/mock/status').then(r => r.json());
     }
 };

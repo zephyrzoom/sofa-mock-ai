@@ -9,7 +9,7 @@ const MonitorPage = {
                             v-for="agent in onlineAgents"
                             :key="agent.id"
                             :label="agent.appName + ' (' + agent.ip + ')'"
-                            :value="agent.ip + ':' + agent.port" />
+                            :value="agent.id" />
                     </el-select>
                     <el-button v-if="!streaming" type="primary" @click="startStream" :disabled="!selectedAgent">
                         开始监控
@@ -81,7 +81,8 @@ const MonitorPage = {
         return {
             selectedAgent: '',
             streaming: false,
-            eventSource: null,
+            pollTimer: null,
+            seenEvents: new Set(),
             logs: [],
             filteredLogs: [],
             autoScroll: true,
@@ -112,17 +113,36 @@ const MonitorPage = {
         },
         startStream() {
             if (!this.selectedAgent || this.streaming) return;
-            const url = 'http://' + this.selectedAgent + '/mock/events/stream';
-            const es = new EventSource(url);
-            this.eventSource = es;
             this.streaming = true;
+            this.seenEvents = new Set();
             this.reconnectNotified = false;
-
-            es.onmessage = (event) => {
-                // Data arrived, so the connection is healthy.
+            this.fetchEvents();
+            this.pollTimer = setInterval(this.fetchEvents, 2000);
+        },
+        stopStream() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+            this.streaming = false;
+            this.reconnectNotified = false;
+        },
+        // 通过管理端服务器中转拉取 agent 事件（避免浏览器直连 agent 的跨域/不可达问题）。
+        async fetchEvents() {
+            try {
+                const events = await api.request('GET', '/agents/' + this.selectedAgent + '/events');
+                if (!Array.isArray(events)) return;
+                // 拉取成功即认为连接正常
                 this.reconnectNotified = false;
-                try {
-                    const data = JSON.parse(event.data);
+                // agent 事件最新在前，转成时间正序后按需追加
+                const chrono = events.slice().reverse();
+                let appended = false;
+                for (const data of chrono) {
+                    const sig = [data.timestamp, data.method, data.path, data.matchTimeMs,
+                                 data.responseStatus, data.matched ? 1 : 0,
+                                 data.caseId || '', data.failReason || ''].join('|');
+                    if (this.seenEvents.has(sig)) continue;
+                    this.seenEvents.add(sig);
                     this.logs.push({
                         time: new Date(data.timestamp).toLocaleTimeString('zh-CN'),
                         method: data.method,
@@ -137,6 +157,10 @@ const MonitorPage = {
                     } else {
                         this.stats.passthrough++;
                     }
+                    appended = true;
+                }
+                if (appended) {
+                    this.reconnectNotified = false;
                     this.applyFilter();
                     if (this.autoScroll) {
                         this.$nextTick(() => {
@@ -144,32 +168,13 @@ const MonitorPage = {
                             if (el) el.scrollTop = el.scrollHeight;
                         });
                     }
-                } catch (e) {
-                    // parse error
                 }
-            };
-
-            es.onerror = () => {
-                // Ignore events from a stream we've already closed.
-                if (this.eventSource !== es) return;
-                if (es.readyState === EventSource.CLOSED) {
-                    // Fatal error (e.g. agent unreachable): stop and let the user retry.
-                    this.stopStream();
-                    this.$message.warning('连接断开，请重新开始监控');
-                } else if (!this.reconnectNotified) {
-                    // EventSource auto-reconnects on transient errors; just tell the user once.
+            } catch (e) {
+                if (!this.reconnectNotified) {
                     this.reconnectNotified = true;
-                    this.$message.warning('连接异常，正在自动重连...');
+                    this.$message.warning('获取监控数据失败，正在重试...');
                 }
-            };
-        },
-        stopStream() {
-            if (this.eventSource) {
-                this.eventSource.close();
-                this.eventSource = null;
             }
-            this.streaming = false;
-            this.reconnectNotified = false;
         },
         clearLogs() {
             this.logs = [];

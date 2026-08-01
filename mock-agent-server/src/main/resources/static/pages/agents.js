@@ -112,10 +112,10 @@ const AgentsPage = {
             this.agentDetail = agent;
             this.agentStats = null;
             this.detailVisible = true;
-            if (agent.port && agent.ip) {
+            if (agent.id) {
                 try {
-                    const url = 'http://' + agent.ip + ':' + agent.port;
-                    this.agentStats = await api.getAgentStats(url);
+                    // 通过管理端服务器中转拉取统计，避免浏览器直连 agent 的跨域/不可达问题
+                    this.agentStats = await api.request('GET', '/agents/' + agent.id + '/stats');
                 } catch (e) {
                     // stats unavailable
                 }

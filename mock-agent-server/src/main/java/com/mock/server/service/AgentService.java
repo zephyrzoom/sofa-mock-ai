@@ -78,6 +78,10 @@ public class AgentService {
         return repository.findByAppName(appName);
     }
 
+    public AgentInstance getById(Long id) {
+        return repository.findById(id).orElse(null);
+    }
+
     public void markOffline(String instanceId) {
         repository.findByInstanceId(instanceId).ifPresent(agent -> {
             agent.setOnline(false);
