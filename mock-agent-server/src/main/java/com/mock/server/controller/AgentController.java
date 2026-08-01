@@ -102,12 +102,53 @@ public class AgentController {
                     while ((len = is.read(buf)) != -1) {
                         bos.write(buf, 0, len);
                     }
-                    return bos.toString(StandardCharsets.UTF_8.name());
+                    return repairJsonStrings(bos.toString(StandardCharsets.UTF_8.name()));
                 }
             }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "agent returned " + code);
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "cannot reach agent: " + e.getMessage());
         }
+    }
+
+    /**
+     * 旧版 agent 的手写 JSON 转义只处理了反斜杠和引号，请求体含换行/制表符等控制字符时
+     * 会产出非法 JSON（字符串值内出现真实换行符）。这里把字符串值内的控制字符转义，
+     * 保证返回给前端的 JSON 始终可解析。对合法 JSON 是无操作。
+     */
+    private static String repairJsonStrings(String json) {
+        if (json == null) return null;
+        StringBuilder out = new StringBuilder(json.length() + 64);
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (escaped) {
+                out.append(c);
+                escaped = false;
+                continue;
+            }
+            if (c == '\\') {
+                out.append(c);
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                out.append(c);
+                inString = !inString;
+                continue;
+            }
+            if (inString && c < 0x20) {
+                switch (c) {
+                    case '\n': out.append("\\n"); break;
+                    case '\r': out.append("\\r"); break;
+                    case '\t': out.append("\\t"); break;
+                    default: out.append(String.format("\\u%04x", (int) c));
+                }
+                continue;
+            }
+            out.append(c);
+        }
+        return out.toString();
     }
 }
