@@ -89,7 +89,8 @@ const MonitorPage = {
             showPassthrough: true,
             filterKeyword: '',
             onlineAgents: [],
-            stats: { total: 0, matched: 0, passthrough: 0, errors: 0 }
+            stats: { total: 0, matched: 0, passthrough: 0, errors: 0 },
+            reconnectNotified: false
         };
     },
     mounted() {
@@ -112,10 +113,14 @@ const MonitorPage = {
         startStream() {
             if (!this.selectedAgent || this.streaming) return;
             const url = 'http://' + this.selectedAgent + '/mock/events/stream';
-            this.eventSource = new EventSource(url);
+            const es = new EventSource(url);
+            this.eventSource = es;
             this.streaming = true;
+            this.reconnectNotified = false;
 
-            this.eventSource.onmessage = (event) => {
+            es.onmessage = (event) => {
+                // Data arrived, so the connection is healthy.
+                this.reconnectNotified = false;
                 try {
                     const data = JSON.parse(event.data);
                     this.logs.push({
@@ -144,9 +149,18 @@ const MonitorPage = {
                 }
             };
 
-            this.eventSource.onerror = () => {
-                this.stopStream();
-                this.$message.warning('连接断开');
+            es.onerror = () => {
+                // Ignore events from a stream we've already closed.
+                if (this.eventSource !== es) return;
+                if (es.readyState === EventSource.CLOSED) {
+                    // Fatal error (e.g. agent unreachable): stop and let the user retry.
+                    this.stopStream();
+                    this.$message.warning('连接断开，请重新开始监控');
+                } else if (!this.reconnectNotified) {
+                    // EventSource auto-reconnects on transient errors; just tell the user once.
+                    this.reconnectNotified = true;
+                    this.$message.warning('连接异常，正在自动重连...');
+                }
             };
         },
         stopStream() {
@@ -155,6 +169,7 @@ const MonitorPage = {
                 this.eventSource = null;
             }
             this.streaming = false;
+            this.reconnectNotified = false;
         },
         clearLogs() {
             this.logs = [];

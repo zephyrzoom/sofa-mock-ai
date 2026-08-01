@@ -14,8 +14,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 public class ManagementApiServer {
+
+    /** Heartbeat interval for SSE keep-alive comments (ms). */
+    private static final long SSE_HEARTBEAT_MS = 10000;
 
     private final MockCaseManager caseManager;
     private final MockStatistics statistics;
@@ -28,7 +33,8 @@ public class ManagementApiServer {
 
     public void start(int port) throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
-        server.setExecutor(Executors.newFixedThreadPool(4));
+        // Cached pool so long-lived SSE connections do not starve other endpoints.
+        server.setExecutor(Executors.newCachedThreadPool());
 
         server.createContext("/mock/cases", new CasesHandler());
         server.createContext("/mock/status", new StatusHandler());
@@ -50,6 +56,24 @@ public class ManagementApiServer {
         return server != null ? server.getAddress().getPort() : 0;
     }
 
+    /**
+     * Answers CORS preflight and marks the response with CORS headers so the
+     * management console (a different origin than the agent) can call this API
+     * directly from the browser. Returns true if the request was an OPTIONS
+     * preflight that has already been answered.
+     */
+    private boolean handleCors(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return true;
+        }
+        return false;
+    }
+
     private void sendResponse(HttpExchange exchange, int statusCode, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
@@ -62,6 +86,7 @@ public class ManagementApiServer {
     private class CasesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI().getPath();
 
@@ -100,6 +125,7 @@ public class ManagementApiServer {
     private class StatusHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
             if (!"GET".equals(exchange.getRequestMethod())) {
                 sendResponse(exchange, 405, "{\"error\":\"method not allowed\"}");
                 return;
@@ -111,6 +137,7 @@ public class ManagementApiServer {
     private class StatsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
             if (!"GET".equals(exchange.getRequestMethod())) {
                 sendResponse(exchange, 405, "{\"error\":\"method not allowed\"}");
                 return;
@@ -137,6 +164,7 @@ public class ManagementApiServer {
     private class EventsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
             String path = exchange.getRequestURI().getPath();
 
             if ("/mock/events/stream".equals(path)) {
@@ -160,32 +188,52 @@ public class ManagementApiServer {
         }
 
         private void handleSseStream(HttpExchange exchange) throws IOException {
-            exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.getResponseHeaders().set("Connection", "keep-alive");
             exchange.sendResponseHeaders(200, 0);
 
             OutputStream os = exchange.getResponseBody();
-            statistics.addEventListener(event -> {
+            AtomicBoolean closed = new AtomicBoolean(false);
+
+            // Use an array to hold the listener so it can remove itself on failure.
+            final Consumer<MatchEvent>[] listenerRef = new Consumer[1];
+            Consumer<MatchEvent> listener = event -> {
+                if (closed.get()) {
+                    return;
+                }
                 try {
-                    String sseData = "data: " + event.toJson() + "\n\n";
-                    os.write(sseData.getBytes(StandardCharsets.UTF_8));
+                    os.write(("data: " + event.toJson() + "\n\n").getBytes(StandardCharsets.UTF_8));
                     os.flush();
                 } catch (IOException e) {
-                    statistics.removeEventListener(this::sendSseEvent);
+                    closed.set(true);
+                    statistics.removeEventListener(listenerRef[0]);
                 }
-            });
+            };
+            listenerRef[0] = listener;
+            statistics.addEventListener(listener);
 
-            // Keep connection open
             try {
-                Thread.currentThread().join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
+                // Flush response headers and verify the socket is writable.
+                os.write(": connected\n\n".getBytes(StandardCharsets.UTF_8));
+                os.flush();
 
-        private void sendSseEvent(MatchEvent event) {
-            // placeholder for lambda reference
+                // Keep the stream open. SSE comments are ignored by EventSource,
+                // so heartbeats only serve to detect a closed client connection:
+                // writing to a dead socket throws IOException, letting us clean up
+                // and release the worker thread instead of holding it forever.
+                while (!closed.get()) {
+                    Thread.sleep(SSE_HEARTBEAT_MS);
+                    os.write(": heartbeat\n\n".getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                }
+            } catch (IOException | InterruptedException e) {
+                // Client disconnected or the handler thread was interrupted.
+            } finally {
+                closed.set(true);
+                statistics.removeEventListener(listener);
+            }
         }
     }
 }
