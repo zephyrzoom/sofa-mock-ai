@@ -1,0 +1,26 @@
+# Build output
+target/
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+*.classpath
+*.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local tooling
+.claude/
+
+# Project archive copy
+*.zip
+
+# H2 runtime database
+**/data/

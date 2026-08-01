@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Agent 管理控制台</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="app">
+        <el-container style="height: 100vh;">
+            <el-aside width="220px" style="background: #304156;">
+                <div class="logo">Mock Agent</div>
+                <el-menu
+                    :default-active="currentRoute"
+                    background-color="#304156"
+                    text-color="#bfcbd9"
+                    active-text-color="#409eff"
+                    @select="handleMenuSelect"
+                    router>
+                    <el-menu-item index="/">
+                        <el-icon><Monitor /></el-icon>
+                        <span>仪表盘</span>
+                    </el-menu-item>
+                    <el-menu-item index="/cases">
+                        <el-icon><Document /></el-icon>
+                        <span>案例管理</span>
+                    </el-menu-item>
+                    <el-menu-item index="/agents">
+                        <el-icon><Connection /></el-icon>
+                        <span>Agent 监控</span>
+                    </el-menu-item>
+                    <el-menu-item index="/monitor">
+                        <el-icon><View /></el-icon>
+                        <span>实时监控</span>
+                    </el-menu-item>
+                </el-menu>
+            </el-aside>
+            <el-main>
+                <router-view></router-view>
+            </el-main>
+        </el-container>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="/api.js"></script>
+    <script src="/pages/dashboard.js"></script>
+    <script src="/pages/cases.js"></script>
+    <script src="/pages/agents.js"></script>
+    <script src="/pages/monitor.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/user/query",
+  "requestBody": "{\"uid\":1001}",
+  "response": {
+    "status": 200,
+    "body": "{\"code\":1,\"name\":\"张三\"}"
+  }
+}
