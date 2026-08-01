@@ -114,8 +114,9 @@ const MonitorPage = {
         startStream() {
             if (!this.selectedAgent || this.streaming) return;
             this.streaming = true;
-            this.seenEvents = new Set();
             this.reconnectNotified = false;
+            // 不重置 seenEvents：已看过的日志（含清空过的）不再重复显示，
+            // 反复停止/开始不会把历史事件成批重新拉出来。
             this.fetchEvents();
             this.pollTimer = setInterval(this.fetchEvents, 2000);
         },
