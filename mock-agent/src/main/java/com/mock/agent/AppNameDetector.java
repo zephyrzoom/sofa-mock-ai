@@ -6,6 +6,9 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 public class AppNameDetector {
 
@@ -127,12 +130,7 @@ public class AppNameDetector {
 
     private static InputStream openResource(String name) {
         // Try all available classloaders
-        ClassLoader[] loaders = {
-                Thread.currentThread().getContextClassLoader(),
-                AppNameDetector.class.getClassLoader(),
-                ClassLoader.getSystemClassLoader()
-        };
-        for (ClassLoader cl : loaders) {
+        for (ClassLoader cl : collectClassLoaders()) {
             if (cl == null) continue;
             try {
                 InputStream is = cl.getResourceAsStream(name);
@@ -145,5 +143,40 @@ public class AppNameDetector {
         }
         MockAgentLogger.debug("[AppNameDetector] " + name + " not found in any classloader");
         return null;
+    }
+
+    /**
+     * Collect classloader candidates in priority order. The application's real classloader
+     * (the context classloader of the "main" thread) is tried first: the agent premain runs
+     * before the application boots, so threads spawned from premain inherit the system
+     * classloader and cannot see resources inside a Spring Boot fat jar (BOOT-INF/classes).
+     * By the time detection runs, JarLauncher has set the main thread's context classloader
+     * to the URL classloader that reads those nested resources.
+     */
+    private static List<ClassLoader> collectClassLoaders() {
+        List<ClassLoader> result = new ArrayList<>();
+
+        ClassLoader mainClassLoader = null;
+        try {
+            for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+                if ("main".equals(entry.getKey().getName())) {
+                    mainClassLoader = entry.getKey().getContextClassLoader();
+                    break;
+                }
+            }
+        } catch (Exception ignore) {
+            // best effort
+        }
+        addIfAbsent(result, mainClassLoader);
+        addIfAbsent(result, Thread.currentThread().getContextClassLoader());
+        addIfAbsent(result, AppNameDetector.class.getClassLoader());
+        addIfAbsent(result, ClassLoader.getSystemClassLoader());
+        return result;
+    }
+
+    private static void addIfAbsent(List<ClassLoader> list, ClassLoader cl) {
+        if (cl != null && !list.contains(cl)) {
+            list.add(cl);
+        }
     }
 }
